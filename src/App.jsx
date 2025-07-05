@@ -8,21 +8,29 @@ import { parseNarrationAndChoices } from "./utils/parseResponse";
 import { fetchInitialNarration, fetchNarrationFromChoice } from "./api/openai";
 
 export default function App() {
+
   const [loading, setLoading] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [narration, setNarration] = useState("");
   const [choices, setChoices] = useState([]);
-  const [messages, setMessages] = useState([]); 
+  const [history, setHistory] = useState([{ role: "system", content: "" } ]);
 
   const startAdventure = async () => {
     setLoading(true);
     try {
+      // 1) on lance l’IA pour l’intro
       const rawText = await fetchInitialNarration();
       const { narration, choices } = parseNarrationAndChoices(rawText);
       setNarration(narration);
       setChoices(choices);
+
+      // 2) on enregistre SYSTEM + réponse assistant dans le history
+      setHistory([
+        { role: "system",    content: ""     },  // placeholder SYSTEM
+        { role: "assistant", content: rawText }
+      ]);
+
       setHasStarted(true);
-      setMessages([{ role: "assistant", content: rawText }]);
     } catch (err) {
       console.error("Erreur lors du chargement initial :", err);
     }
@@ -36,7 +44,7 @@ export default function App() {
     const userMessage = { role: "user", content: choice };
 
     // On construit le thread complet : system + anciens messages + ce nouveau userMessage
-    const thread = [...messages, userMessage];
+    const thread = [...history, userMessage];
 
     // Envoi à l'API avec tout le contexte
     const rawText = await fetchNarrationFromChoice(thread);
@@ -51,7 +59,7 @@ export default function App() {
 
     // On enrichit l’historique avec la réponse assistant
     const assistantMessage = { role: "assistant", content: rawText };
-    setMessages([...thread, assistantMessage]);
+    setHistory([...thread, assistantMessage]);
   } catch (err) {
     console.error("Erreur après un choix :", err);
   } finally {
