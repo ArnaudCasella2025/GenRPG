@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import Header from "./components/Header";
 import NarrationBox from "./components/NarrationBox";
 import ChoiceButtons from "./components/ChoiceButtons";
+import CustomChoice from "./components/CustomChoice";
 import Loader from "./components/Loader";
 import { parseNarrationAndChoices } from "./utils/parseResponse";
 import { fetchInitialNarration, fetchNarrationFromChoice } from "./api/openai";
@@ -13,6 +14,7 @@ export default function App() {
   const [hasStarted, setHasStarted] = useState(false);
   const [narration, setNarration] = useState("");
   const [choices, setChoices] = useState([]);
+  const [customChoice, setCustomChoice] = useState("");
   const [history, setHistory] = useState([{ role: "system", content: "" } ]);
 
   const startAdventure = async () => {
@@ -86,7 +88,19 @@ export default function App() {
             </button>
           </div>
         ) : (
-          <ChoiceButtons choices={choices} onSelect={handleChoice} isDisabled={loading} />
+          <>
+            <ChoiceButtons choices={choices} onSelect={handleChoice} isDisabled={loading} />
+            <CustomChoice
+              value={customChoice}
+              onChange={e => setCustomChoice(e.target.value)}
+              onSubmit={() => {
+                if (customChoice.trim().length < 3) return;
+                  handleChoice(customChoice);
+                  setCustomChoice("");
+                }}
+              disabled={loading}
+            />
+          </>
         )}
       </div>
     </div>
