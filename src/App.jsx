@@ -7,6 +7,7 @@ import CustomChoice from "./components/CustomChoice";
 import Loader from "./components/Loader";
 import { parseNarrationAndChoices } from "./utils/parseResponse";
 import { fetchInitialNarration, fetchNarrationFromChoice } from "./api/openai";
+import { fetchSceneImage } from "./api/dalle";
 
 export default function App() {
 
@@ -16,6 +17,8 @@ export default function App() {
   const [choices, setChoices] = useState([]);
   const [customChoice, setCustomChoice] = useState("");
   const [history, setHistory] = useState([{ role: "system", content: "" } ]);
+  const [sceneImage, setSceneImage] = useState(null);
+  const [imgLoading, setImgLoading] = useState(false);
 
   const startAdventure = async () => {
     setLoading(true);
@@ -33,6 +36,16 @@ export default function App() {
       ]);
 
       setHasStarted(true);
+
+      setImgLoading(true);
+      try {
+        const url = await fetchSceneImage(narration);
+        setSceneImage(url);
+      } catch (e) {
+        console.error("Erreur génération image :", e);
+        setSceneImage(null);
+      }
+      setImgLoading(false);
     } catch (err) {
       console.error("Erreur lors du chargement initial :", err);
     }
@@ -62,6 +75,16 @@ export default function App() {
     // On enrichit l’historique avec la réponse assistant
     const assistantMessage = { role: "assistant", content: rawText };
     setHistory([...thread, assistantMessage]);
+
+    setImgLoading(true);
+    try {
+      const url = await fetchSceneImage(narration);
+      setSceneImage(url);
+    } catch (e) {
+      console.error("Erreur génération image :", e);
+      setSceneImage(null);
+    }
+    setImgLoading(false);
   } catch (err) {
     console.error("Erreur après un choix :", err);
   } finally {
@@ -73,6 +96,14 @@ export default function App() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800 p-4">
       <div className="max-w-2xl w-full bg-gray-100 rounded-2xl shadow-xl p-6 text-gray-800">
         <Header />
+        {imgLoading && <div className="text-center italic mb-2">Génération de l’image…</div>}
+        {sceneImage && (
+          <img
+            src={sceneImage}
+            alt="Illustration de la scène"
+            className="w-full rounded-lg mb-4 shadow"
+          />
+        )}
         <NarrationBox narration={narration} /> {loading && <Loader />}
         
         {!hasStarted ? (
