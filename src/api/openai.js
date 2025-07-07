@@ -34,10 +34,15 @@ export async function fetchNarrationFromChoice(messages) {
   return await fetchFromOpenAI(messages);
 }
 
+// Ajout du wrapper pour fetchRefinedDescription
+export async function fetchRefinedDescription(rawText) {
+  return await refineImageDescription(rawText);
+}
+
 /**
  * Fonction générique pour appeler l'API OpenAI avec un historique donné
  */
-async function fetchFromOpenAI(messages) {
+export async function fetchFromOpenAI(messages) {
   if (!OPENAI_API_KEY) {
     throw new Error("Clé API OpenAI manquante.");
   }

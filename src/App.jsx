@@ -4,6 +4,7 @@ import NarrationBox from "./components/NarrationBox";
 import ChoiceButtons from "./components/ChoiceButtons";
 import CustomChoice from "./components/CustomChoice";
 import LoadingOverlay from "./components/LoadingOverlay";
+import ProgressBar from "./components/ProgressBar";
 import { parseNarrationAndChoices } from "./utils/parseResponse";
 import { fetchInitialNarration, fetchNarrationFromChoice } from "./api/openai";
 import { fetchSceneImage } from "./api/dalle";
@@ -16,30 +17,35 @@ export default function App() {
   const [textLoading, setTextLoading]     = useState(false);
   const [imageLoading, setImageLoading]   = useState(false);
   const [sceneImage, setSceneImage]       = useState(null);
+  const [progress, setProgress]         = useState(0);
   const [history, setHistory]             = useState([{ role: "system", content: "" }]);
 
   const startAdventure = async () => {
     // 1) On met les deux overlays en route
     setTextLoading(true);
     setImageLoading(true);
+    setProgress(0);                // étape 0%
 
     // 2) Génération du texte d’intro
     let rawText;
     try {
       rawText = await fetchInitialNarration();
+      setProgress(25);             // narration générée
       const { narration: newNarr, choices: newCh } = parseNarrationAndChoices(rawText);
       setNarration(newNarr);
       setChoices(newCh);
       setHistory([{ role: "system", content: "" }, { role: "assistant", content: rawText }]);
+      setProgress(25);  // texte prêt
       setHasStarted(true);
     } catch (e) {
       console.error("Erreur intro :", e);
     }
     setTextLoading(false);
+    setProgress(25);
 
     // 3) Génération de l’image pour l’intro
     try {
-      const url = await fetchSceneImage(rawText);
+      const url = await fetchSceneImage(rawText, (pct) => setProgress(pct));
       setSceneImage(url);
     } catch (e) {
       console.error("Erreur image intro :", e);
@@ -51,6 +57,7 @@ export default function App() {
     // 1) Overlay texte + image activés
     setTextLoading(true);
     setImageLoading(true);
+    setProgress(0); 
 
     // 2) Envoi du choix et génération du nouveau texte
     let rawText;
@@ -66,10 +73,10 @@ export default function App() {
       console.error("Erreur handleChoice :", e);
     }
     setTextLoading(false);
-
+    setProgress(25); 
     // 3) Génération de l’image pour la scène
     try {
-      const url = await fetchSceneImage(rawText);
+      const url = await fetchSceneImage(rawText, (pct) => setProgress(pct));
       setSceneImage(url);
     } catch (e) {
       console.error("Erreur image scène :", e);
@@ -93,6 +100,12 @@ export default function App() {
             />
           )}
         </div>
+        {imageLoading && (
+          <div className="mb-2">
+            <ProgressBar progress={progress} />
+            <div className="text-sm text-gray-600 mt-1">{progress}%</div>
+          </div>
+        )}
 
         {/* Narration + boutons + overlay */}
         <div className="relative mb-4">

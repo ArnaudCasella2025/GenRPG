@@ -1,3 +1,6 @@
+import { buildImagePrompt } from "../utils/buildImagePrompt";
+import { fetchRefinedDescription } from "../utils/refineImageDesc";
+
 const IMAGES_URL = "https://api.openai.com/v1/images/generations";
 const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
 
@@ -6,14 +9,17 @@ const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
  * @param {string} narration - Texte narratif complet généré par GPT-4.
  * @returns {Promise<string>} URL de l'image générée.
  */
-export async function fetchSceneImage(narration) {
+export async function fetchSceneImage(narration, onProgress = () => {}) {
   if (!OPENAI_API_KEY) {
     throw new Error("Clé OpenAI manquante.");
   }
-
-  // Construction du prompt pour DALL·E
-  const prompt = `Create a highly detailed, cinematic illustration of the following scene from a fantasy role-playing game.\nScene description:\n“${narration}”\n\nFocus on visual elements mentioned. Style: realistic, vibrant colors, soft cinematic lighting, concept-art quality.`;
-
+   // 1) Refinement de la narration pour le prompt image
+  const refined = await fetchRefinedDescription(narration);
+  onProgress(50);
+  // 2) Construction du prompt à partir du texte enrichi
+  const prompt = buildImagePrompt(refined);
+  onProgress(75);
+  
   const response = await fetch(IMAGES_URL, {
     method: "POST",
     headers: {
@@ -38,6 +44,6 @@ export async function fetchSceneImage(narration) {
   if (!data || !data[0]?.url) {
     throw new Error("Réponse DALL·E invalide.");
   }
-
+  onProgress(100);
   return data[0].url;
 }
