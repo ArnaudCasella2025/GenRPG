@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import ToggleImages from "./components/ToggleImages";
 import Header from "./components/Header";
 import NarrationBox from "./components/NarrationBox";
 import ChoiceButtons from "./components/ChoiceButtons";
@@ -19,6 +20,14 @@ export default function App() {
   const [sceneImage, setSceneImage]       = useState(null);
   const [progress, setProgress]         = useState(0);
   const [history, setHistory]             = useState([{ role: "system", content: "" }]);
+  // Toggle global pour la génération d'images IA
+  const [imageEnabled, setImageEnabled] = useState(() => {
+    const stored = localStorage.getItem("imageEnabled");
+    return stored !== null ? JSON.parse(stored) : true;
+  });
+  useEffect(() => {
+    localStorage.setItem("imageEnabled", JSON.stringify(imageEnabled));
+  }, [imageEnabled]);
 
   const startAdventure = async () => {
     // 1) On met les deux overlays en route
@@ -26,30 +35,37 @@ export default function App() {
     setImageLoading(true);
     setProgress(0);                // étape 0%
 
-    // 2) Génération du texte d’intro
+    // 1) Génération du texte d’intro (toujours exécutée)
     let rawText;
     try {
       rawText = await fetchInitialNarration();
-      setProgress(25);             // narration générée
+      setProgress(25);
       const { narration: newNarr, choices: newCh } = parseNarrationAndChoices(rawText);
       setNarration(newNarr);
       setChoices(newCh);
-      setHistory([{ role: "system", content: "" }, { role: "assistant", content: rawText }]);
-      setProgress(25);  // texte prêt
+      setHistory([
+        { role: "system", content: "" },
+        { role: "assistant", content: rawText }
+      ]);
       setHasStarted(true);
     } catch (e) {
       console.error("Erreur intro :", e);
+    } finally {
+      setTextLoading(false);
+      setProgress(25);
     }
-    setTextLoading(false);
-    setProgress(25);
 
-    // 3) Génération de l’image pour l’intro
-    try {
-      const url = await fetchSceneImage(rawText, (pct) => setProgress(pct));
-      setSceneImage(url);
-    } catch (e) {
-      console.error("Erreur image intro :", e);
+    // 2) Génération de l’image (uniquement si activé)
+    if (imageEnabled) {
+      try {
+        const url = await fetchSceneImage(rawText, pct => setProgress(pct));
+        setSceneImage(url);
+      } catch (e) {
+        console.error("Erreur image intro :", e);
+      }
     }
+
+    // On arrête toujours le loader image
     setImageLoading(false);
   };
 
@@ -59,11 +75,11 @@ export default function App() {
     setImageLoading(true);
     setProgress(0); 
 
-    // 2) Envoi du choix et génération du nouveau texte
+     // 1) Génération du nouveau texte (toujours exécutée)
     let rawText;
     try {
       const userMessage = { role: "user", content: choice };
-      const thread      = [...history, userMessage];
+      const thread = [...history, userMessage];
       rawText = await fetchNarrationFromChoice(thread);
       const { narration: newNarr, choices: newCh } = parseNarrationAndChoices(rawText);
       setNarration(newNarr);
@@ -71,16 +87,22 @@ export default function App() {
       setHistory([...thread, { role: "assistant", content: rawText }]);
     } catch (e) {
       console.error("Erreur handleChoice :", e);
+    } finally {
+      setTextLoading(false);
+      setProgress(25);
     }
-    setTextLoading(false);
-    setProgress(25); 
-    // 3) Génération de l’image pour la scène
-    try {
-      const url = await fetchSceneImage(rawText, (pct) => setProgress(pct));
-      setSceneImage(url);
-    } catch (e) {
-      console.error("Erreur image scène :", e);
+
+    // 2) Génération de l’image (uniquement si activé)
+    if (imageEnabled) {
+      try {
+        const url = await fetchSceneImage(rawText, pct => setProgress(pct));
+        setSceneImage(url);
+      } catch (e) {
+        console.error("Erreur image scène :", e);
+      }
     }
+
+    // On arrête toujours le loader image
     setImageLoading(false);
   };
 
@@ -88,19 +110,31 @@ export default function App() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800 p-4">
       <div className="max-w-2xl w-full bg-gray-100 rounded-2xl shadow-xl p-6 text-gray-800">
         <Header />
-
+        {/* Toggle génération d’images IA */}
+        <ToggleImages
+          enabled={imageEnabled}
+          onToggle={() => {
+            setImageEnabled(v => !v);
+            // si on coupe les images, on arrête aussi tout chargement en cours
+            if (imageLoading) setImageLoading(false);
+          }}
+        />
         {/* Scène : image + overlay */}
         <div className="relative w-full h-64 bg-gray-200 rounded-lg overflow-hidden shadow-inner">
-          <LoadingOverlay visible={imageLoading} text="Génération de l’image…" />
-          {sceneImage && (
-            <img
-              src={sceneImage}
-              alt="Illustration de la scène"
-              className="w-full h-full object-cover"
-            />
+          {imageEnabled && (
+            <>
+              <LoadingOverlay visible={imageLoading} text="Génération de l’image…" />
+              {sceneImage && (
+                <img
+                  src={sceneImage}
+                  alt="Illustration de la scène"
+                  className="w-full h-full object-cover"
+                />
+              )}
+            </>
           )}
         </div>
-        {imageLoading && (
+        {imageLoading && imageEnabled && (
           <div className="mb-2">
             <ProgressBar progress={progress} />
             <div className="text-sm text-gray-600 mt-1">{progress}%</div>
