@@ -9,6 +9,7 @@ import ProgressBar from "./components/ProgressBar";
 import { parseNarrationAndChoices } from "./utils/parseResponse";
 import { fetchInitialNarration, fetchNarrationFromChoice } from "./api/openai";
 import { fetchSceneImage } from "./api/dalle";
+import { loadHistory, saveHistory } from "./utils/storage";
 
 export default function App() {
   const [hasStarted, setHasStarted]       = useState(false);
@@ -19,7 +20,13 @@ export default function App() {
   const [imageLoading, setImageLoading]   = useState(false);
   const [sceneImage, setSceneImage]       = useState(null);
   const [progress, setProgress]         = useState(0);
-  const [history, setHistory]             = useState([{ role: "system", content: "" }]);
+  //const [history, setHistory]             = useState([{ role: "system", content: "" }]);
+  // Historique de conversation pour OpenAI (role/content)
+  const [chatHistory, setChatHistory] = useState([
+    { role: "system", content: "" }
+  ]);
+  // Historique de scène pour l’UI (narration + imageUrl + timestamp)
+  const [sceneHistory, setSceneHistory] = useState(() => loadHistory());
   // Toggle global pour la génération d'images IA
   const [imageEnabled, setImageEnabled] = useState(() => {
     const stored = localStorage.getItem("imageEnabled");
@@ -36,18 +43,23 @@ export default function App() {
     setProgress(0);                // étape 0%
 
     // 1) Génération du texte d’intro (toujours exécutée)
-    let rawText;
+    let rawText = "";
+    let newNarr = "";
+    let newCh = [];
+    let imageUrl = null;
     try {
       rawText = await fetchInitialNarration();
       setProgress(25);
-      const { narration: newNarr, choices: newCh } = parseNarrationAndChoices(rawText);
+      
+      // On parse et on récupère narration + choix
+      const parsed = parseNarrationAndChoices(rawText);
+      newNarr = parsed.narration;
+      newCh = parsed.choices;
+
       setNarration(newNarr);
       setChoices(newCh);
-      setHistory([
-        { role: "system", content: "" },
-        { role: "assistant", content: rawText }
-      ]);
       setHasStarted(true);
+
     } catch (e) {
       console.error("Erreur intro :", e);
     } finally {
@@ -59,11 +71,29 @@ export default function App() {
     if (imageEnabled) {
       try {
         const url = await fetchSceneImage(rawText, pct => setProgress(pct));
+        imageUrl = url;
         setSceneImage(url);
       } catch (e) {
         console.error("Erreur image intro :", e);
       }
     }
+
+    const entryIntro = {
+      narration: newNarr,
+      imageUrl,
+      timestamp: Date.now()
+    };
+    setSceneHistory(prev => {
+      const next = [...prev, entryIntro];
+      saveHistory(next);
+      return next;
+    });
+
+   // 4️⃣ On alimente aussi chatHistory pour les prochains appels
+   setChatHistory([
+     ...chatHistory,
+     { role: "assistant", content: rawText }
+   ]);
 
     // On arrête toujours le loader image
     setImageLoading(false);
@@ -76,15 +106,23 @@ export default function App() {
     setProgress(0); 
 
      // 1) Génération du nouveau texte (toujours exécutée)
-    let rawText;
+    let rawText = "";
+    let newNarr = "";
+    let newCh = [];
+    let imageUrl = null;
+
     try {
       const userMessage = { role: "user", content: choice };
-      const thread = [...history, userMessage];
+      const thread = [...chatHistory, userMessage];
       rawText = await fetchNarrationFromChoice(thread);
-      const { narration: newNarr, choices: newCh } = parseNarrationAndChoices(rawText);
+      // On parse et on récupère narration + choix
+      const parsed = parseNarrationAndChoices(rawText);
+      newNarr = parsed.narration;
+      newCh = parsed.choices;
+
       setNarration(newNarr);
       setChoices(newCh);
-      setHistory([...thread, { role: "assistant", content: rawText }]);
+      setChatHistory(prev => [...prev, userMessage, { role: "assistant", content: rawText }]);
     } catch (e) {
       console.error("Erreur handleChoice :", e);
     } finally {
@@ -96,11 +134,23 @@ export default function App() {
     if (imageEnabled) {
       try {
         const url = await fetchSceneImage(rawText, pct => setProgress(pct));
+        imageUrl = url;
         setSceneImage(url);
       } catch (e) {
         console.error("Erreur image scène :", e);
       }
     }
+
+    const entry = {
+      narration: newNarr,
+      imageUrl,
+      timestamp: Date.now()
+    };
+    setSceneHistory(prev => {
+        const next = [...prev, entry];
+        saveHistory(next);
+        return next;
+      });
 
     // On arrête toujours le loader image
     setImageLoading(false);
