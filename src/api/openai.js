@@ -1,14 +1,10 @@
 const API_URL = "https://api.openai.com/v1/chat/completions";
 const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY;
+const DEBUG_API = import.meta.env.DEV;
 
-/**
- * Appelle GPT pour générer la première narration et les choix d'intro
- */
-export async function fetchInitialNarration() {
-  const messages = [
-    {
-      role: "system",
-      content: `Tu es un maître du jeu dans un jeu de rôle textuel. À chaque tour, tu dois raconter la suite de l'aventure de manière immersive, puis proposer exactement 3 choix d'actions possibles.
+
+export const GAME_SYSTEM_PROMPT = `
+Tu es un maître du jeu dans un jeu de rôle textuel. À chaque tour, tu dois raconter la suite de l'aventure de manière immersive, puis proposer exactement 3 choix d'actions possibles.
 
 Respecte strictement ce format :
 
@@ -19,11 +15,43 @@ Choix:
 2. [Deuxième choix]
 3. [Troisième choix]
 
-N’inclus rien d’autre dans ta réponse. Ne répète pas les règles. Commence directement par : Narration:`
+N’inclus rien d’autre dans ta réponse. Ne répète pas les règles. Commence directement par : Narration:`;
+
+/**
+ * Appelle GPT pour générer la première narration et les choix d'intro
+ */
+export async function fetchInitialNarration() {
+  return await fetchFromOpenAI([
+    { role: "system", content: GAME_SYSTEM_PROMPT }
+  ]);
+}
+
+export async function regenerateChoicesFromNarration(narration) {
+  const messages = [
+    {
+      role: "system",
+      content: `Tu renvoies STRICTEMENT un JSON valide de la forme:
+{"choices":["...","...","..."]}
+Aucune autre phrase, pas de backticks.`
+    },
+    {
+      role: "user",
+      content: `À partir de ce texte:
+
+"""${narration}"""
+
+Propose EXACTEMENT 3 choix d'action plausibles, courts (<= 90 caractères).`
     }
   ];
 
-  return await fetchFromOpenAI(messages);
+  const txt = await fetchFromOpenAI(messages);
+  try {
+    const parsed = JSON.parse(txt);
+    if (Array.isArray(parsed.choices)) return parsed.choices;
+  } catch (_) {
+    // fallback minimal si l'IA ne renvoie pas du JSON strict
+  }
+  return ["Continuer", "Observer les environs", "Revenir sur ses pas"];
 }
 
 /**
@@ -31,7 +59,11 @@ N’inclus rien d’autre dans ta réponse. Ne répète pas les règles. Commenc
  * @param {Array} messages - Historique des messages (system + user)
  */
 export async function fetchNarrationFromChoice(messages) {
-  return await fetchFromOpenAI(messages);
+  const full = [
+    { role: "system", content: GAME_SYSTEM_PROMPT },
+    ...messages
+  ];
+  return await fetchFromOpenAI(full);
 }
 
 // Ajout du wrapper pour fetchRefinedDescription
@@ -47,18 +79,27 @@ export async function fetchFromOpenAI(messages) {
     throw new Error("Clé API OpenAI manquante.");
   }
 
-  const response = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${OPENAI_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: "gpt-4o",
-      messages,
-      temperature: 0.8
-    })
-  });
+  const body = {
+     model: "gpt-4o",
+     messages,
+     temperature: 0.8
+   };
+
+   if (DEBUG_API) {
+     console.groupCollapsed("🛰️ OpenAI REQUEST");
+     console.log("URL:", API_URL);
+     console.log("Body:", body);
+     console.groupEnd();
+   }
+
+   const response = await fetch(API_URL, {
+     method: "POST",
+     headers: {
+       "Content-Type": "application/json",
+       Authorization: `Bearer ${OPENAI_API_KEY}`
+     },
+     body: JSON.stringify(body)
+   });
 
   if (!response.ok) {
     throw new Error(`Erreur API (${response.status})`);

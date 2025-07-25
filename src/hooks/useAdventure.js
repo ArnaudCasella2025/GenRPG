@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { fetchInitialNarration, fetchNarrationFromChoice } from "../api/openai";
-import { fetchSceneImage } from "../api/dalle";
+import { fetchInitialNarration, fetchNarrationFromChoice, regenerateChoicesFromNarration, GAME_SYSTEM_PROMPT } from "../api/openai";
 import { parseNarrationAndChoices } from "../utils/parseResponse";
 import { loadHistory, saveHistory } from "../utils/storage";
+import { hasSavedSession, rebuildChatHistory, loadLastSession } from "../utils/session";
 
 /**
  * runScene : cœur de la génération d'une scène (intro ou choix).
@@ -38,9 +38,23 @@ async function runScene({ buildText, userMessage = null, state }) {
     rawText = await buildText(currentChat);
     setProgress(25);
 
-    const parsed = parseNarrationAndChoices(rawText);
-    newNarr = parsed.narration;
-    newCh = parsed.choices;
+    const { narration: parsedNarr, choices: parsedCh, error: parseErr } =
+      parseNarrationAndChoices(rawText, { debug: import.meta.env.DEV });
+
+    if (parseErr) {
+      // En cas d'erreur de parsing, on garde le rawText et on régénère les choix
+      newNarr = rawText;
+      newCh   = await regenerateChoicesFromNarration(newNarr);
+    } else {
+      // Tout va bien : on utilise le résultat du parser
+      newNarr = parsedNarr;
+      newCh   = parsedCh;
+    }
+
+    // (Optionnel) si l'IA a renvoyé un tableau vide, fallback aussi
+    if (!newCh || newCh.length === 0) {
+      newCh = await regenerateChoicesFromNarration(newNarr);
+    }
 
     setNarration(newNarr);
     setChoices(newCh);
@@ -70,7 +84,13 @@ async function runScene({ buildText, userMessage = null, state }) {
   setImageLoading(false);
 
   // 4) enregistrement de la scène
-  const entry = { narration: newNarr, imageUrl, timestamp: Date.now() };
+  const entry = {
+    narration: newNarr,
+    choices: newCh,
+    imageUrl,
+    timestamp: Date.now(),
+    userChoice: userMessage ? userMessage.content : null
+  };
   setSceneHistory(prev => {
     const next = [...prev, entry];
     saveHistory(next);
@@ -87,9 +107,12 @@ export function useAdventure() {
   const [imageLoading, setImageLoading] = useState(false);
   const [sceneImage, setSceneImage] = useState(null);
   const [progress, setProgress] = useState(0);
+  const [showStartScreen, setShowStartScreen] = useState(false);
 
   // Historiques
-  const [chatHistory, setChatHistory] = useState([{ role: "system", content: "" }]);
+  const [chatHistory, setChatHistory] = useState([
+    { role: "system", content: GAME_SYSTEM_PROMPT }
+  ]);
   const [sceneHistory, setSceneHistory] = useState(() => loadHistory());
 
   // Toggle images
@@ -97,11 +120,51 @@ export function useAdventure() {
     const stored = localStorage.getItem("imageEnabled");
     return stored !== null ? JSON.parse(stored) : true;
   });
+
+  useEffect(() => {
+    if (!hasStarted && hasSavedSession()) {
+      setShowStartScreen(true);
+    }
+  }, [hasStarted]);
+
   useEffect(() => {
     localStorage.setItem("imageEnabled", JSON.stringify(imageEnabled));
   }, [imageEnabled]);
 
   // Regrouper ce dont runScene a besoin
+  
+  const resumeLastSession = () => {
+    const data = loadLastSession();
+    if (!data) { setShowStartScreen(false); return; }
+    const { sceneHistory: hist, lastEntry } = data;
+
+    setSceneHistory(hist);
+// on restaure l'écran courant
+    setNarration(lastEntry.narration || "");
+    setChoices(lastEntry.choices || []); // si tu as stocké choices
+    setSceneImage(lastEntry.imageUrl || null);
+    setHasStarted(true);
+
+    // chatHistory minimal : system + assistant last
+    setChatHistory(rebuildChatHistory(hist));
+
+    setShowStartScreen(false);
+  };
+
+  const newGame = () => {
+    // on ignore la sauvegarde et on lance l'app comme d'hab
+    setShowStartScreen(false);
+
+    // Réinitialiser tout l’état
+    setHasStarted(false);
+    setNarration("");
+    setChoices([]);
+    setSceneImage(null);
+    setSceneHistory([]);
+    setChatHistory([
+      { role: "system", content: GAME_SYSTEM_PROMPT }
+    ]);
+  };
   const state = {
     setTextLoading, setImageLoading, setProgress,
     setNarration, setChoices, setHasStarted,
@@ -137,5 +200,8 @@ export function useAdventure() {
     setImageEnabled,
     startAdventure,
     handleChoice,
+    showStartScreen,
+    resumeLastSession,
+    newGame,
   };
 }

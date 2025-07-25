@@ -7,6 +7,7 @@ import CustomChoice from "./components/CustomChoice";
 import LoadingOverlay from "./components/LoadingOverlay";
 import ProgressBar from "./components/ProgressBar";
 import { useAdventure } from "./hooks/useAdventure";
+import StartScreen from "./components/StartScreen";
 
 export default function App() {
   const {
@@ -21,11 +22,17 @@ export default function App() {
     setImageEnabled,
     startAdventure,
     handleChoice,
+    showStartScreen,
+    resumeLastSession,
+    newGame,
   } = useAdventure();
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800 p-4">
       <div className="max-w-2xl w-full bg-gray-100 rounded-2xl shadow-xl p-6 text-gray-800">
+        {showStartScreen && (
+          <StartScreen onResume={resumeLastSession} onNewGame={newGame} />
+        )}
         <Header />
 
         <ToggleImages enabled={imageEnabled} onToggle={() => {

@@ -1,26 +1,37 @@
-export function parseNarrationAndChoices(rawText) {
+// src/utils/parseResponse.js
+export function parseNarrationAndChoices(rawText, { debug = import.meta.env.DEV } = {}) {
   try {
-    const parts = rawText.split(/Choix\s*:/i);
-    const narrationBlock = parts[0].trim();
-    const narration = narrationBlock.replace(/^Narration:\s*/i, "").trim();
+    // On cherche explicitement "Choix:"
+    const choixMatch = rawText.match(/Choix\s*:([\s\S]*)/i);
+    const narrationPart = choixMatch ? rawText.slice(0, choixMatch.index) : rawText;
+    const narration = narrationPart.replace(/^Narration:\s*/i, "").trim();
 
     let choices = [];
-
-    if (parts[1]) {
-      choices = parts[1]
-        .trim()
+    if (choixMatch) {
+      choices = choixMatch[1]
         .split(/\n+/)
-        .map(line => line.trim().replace(/^\d+\.\s*/, ""))
-        .filter(choice => choice.length > 0);
+        .map(line => line.replace(/^\s*\d+[\.\)\-]\s*/, "").trim())
+        .filter(Boolean);
     }
 
-    if (!narration || choices.length < 2) throw new Error("Format inattendu");
+    // Pas d'erreur fatale si pas de choix -> on retournera error = true
+    const error = !narration || choices.length === 0 ? new Error("no choices") : null;
 
-    return { narration, choices };
-  } catch {
-    return {
-      narration: "⚠️ Erreur de parsing IA.",
-      choices: []
-    };
+    if (debug && error) {
+      console.groupCollapsed("⚠️ Parse error");
+      console.log("rawText:", rawText);
+      console.groupEnd();
+    }
+
+    return { narration, choices, error };
+  } catch (e) {
+    if (debug) {
+      console.groupCollapsed("⚠️ Parse error");
+      console.error(e);
+      console.log("rawText:", rawText);
+      console.groupEnd();
+    }
+    
+    return { narration: rawText, choices: [], error: e };
   }
 }

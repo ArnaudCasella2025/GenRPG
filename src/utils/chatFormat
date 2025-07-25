@@ -1,0 +1,8 @@
+export const SYSTEM_PROMPT = `Tu es un maître du jeu... (ton prompt strict ici)`;
+
+export function formatAssistantBlock(narration, choices) {
+  return `Narration: ${narration}
+
+Choix:
+${choices.map((c, i) => `${i + 1}. ${c}`).join("\n")}`;
+}
